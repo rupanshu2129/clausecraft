@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ClauseCraft.ai</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>ClauseCraft.ai</h1>
+      <button id="new" class="btn">New Session</button>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h3>1) Upload RFQ</h3>
+        <p class="muted">PDF, DOCX, or TXT</p>
+        <input id="rfq" type="file" accept=".pdf,.docx,.txt" />
+        <div id="rfqName" class="muted"></div>
+      </div>
+
+      <div class="card">
+        <h3>2) Upload SOWs / MSAs (optional)</h3>
+        <input id="sows" type="file" accept=".pdf,.docx,.txt" multiple />
+        <ul id="sowList" class="muted small"></ul>
+      </div>
+
+      <div class="card">
+        <h3>3) Analyze</h3>
+        <button id="analyze" class="btn primary" disabled>Analyze</button>
+        <div id="status" class="status"></div>
+      </div>
+    </section>
+
+    <section id="results" class="hidden">
+      <div class="card">
+        <h3>Deviation Report</h3>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Clause</th>
+                <th>Customer Ask</th>
+                <th>Our Standard</th>
+                <th>Deviation</th>
+                <th>Risk</th>
+                <th>Suggested Fix</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>AI Draft (Redlines)</h3>
+        <div id="redlines" class="prose"></div>
+        <div class="kpis">
+          <div><div class="kpi-label">Cycle Time Cut</div><div id="kpi1" class="kpi-value">—</div></div>
+          <div><div class="kpi-label">First-Draft Coverage</div><div id="kpi2" class="kpi-value">—</div></div>
+          <div><div class="kpi-label">Risk High → Medium</div><div id="kpi3" class="kpi-value">—</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const rfqInput = document.getElementById('rfq');
+    const sowsInput = document.getElementById('sows');
+    const analyzeBtn = document.getElementById('analyze');
+    const statusEl = document.getElementById('status');
+    const rfqName = document.getElementById('rfqName');
+    const sowList = document.getElementById('sowList');
+    const results = document.getElementById('results');
+    const rows = document.getElementById('rows');
+    const redlines = document.getElementById('redlines');
+    const k1 = document.getElementById('kpi1');
+    const k2 = document.getElementById('kpi2');
+    const k3 = document.getElementById('kpi3');
+    const newBtn = document.getElementById('new');
+
+    function fmtPct(n) {
+      if (typeof n !== 'number') return '—';
+      const v = Math.round(n);
+      return (v > 0 ? '+' : '') + v + '%';
+    }
+
+    rfqInput.addEventListener('change', () => {
+      analyzeBtn.disabled = !rfqInput.files.length;
+      rfqName.textContent = rfqInput.files[0] ? rfqInput.files[0].name : '';
+    });
+
+    sowsInput.addEventListener('change', () => {
+      sowList.innerHTML = '';
+      Array.from(sowsInput.files || []).forEach(f => {
+        const li = document.createElement('li');
+        li.textContent = f.name;
+        sowList.appendChild(li);
+      });
+    });
+
+    newBtn.addEventListener('click', () => {
+      rfqInput.value = '';
+      sowsInput.value = '';
+      rfqName.textContent = '';
+      sowList.innerHTML = '';
+      rows.innerHTML = '';
+      redlines.innerHTML = '';
+      k1.textContent = '—';
+      k2.textContent = '—';
+      k3.textContent = '—';
+      results.classList.add('hidden');
+      analyzeBtn.disabled = true;
+      statusEl.textContent = '';
+    });
+
+    analyzeBtn.addEventListener('click', async () => {
+      if (!rfqInput.files.length) return;
+      analyzeBtn.disabled = true;
+      statusEl.textContent = 'Analyzing…';
+
+      const fd = new FormData();
+      fd.append('rfq', rfqInput.files[0]);
+      Array.from(sowsInput.files || []).forEach(f => fd.append('sows', f));
+
+      const res = await fetch('/api/analyze', { method: 'POST', body: fd });
+      const data = await res.json();
+
+      analyzeBtn.disabled = false;
+      statusEl.textContent = '';
+
+      if (!res.ok) {
+        statusEl.textContent = data?.error || 'Analyze failed';
+        return;
+      }
+
+      rows.innerHTML = '';
+      (data.deviations || []).forEach(d => {
+        const tr = document.createElement('tr');
+        const dev = Math.max(0, Math.min(100, Math.round(d.deviation || 0)));
+        const risk = d.risk || 'Low';
+        tr.innerHTML = `
+          <td class="bold">${d.clause || ''}</td>
+          <td>${d.customerAsk || ''}</td>
+          <td>${d.ourStandard || ''}</td>
+          <td>
+            <div class="devbar">
+              <div class="devfill ${dev>70?'red':dev>50?'amber':'green'}" style="width:${dev}%"></div>
+            </div>
+            <span>${dev}%</span>
+          </td>
+          <td><span class="badge ${risk.toLowerCase()}">${risk}</span></td>
+          <td>${d.suggestion || ''}</td>
+        `;
+        rows.appendChild(tr);
+      });
+
+      redlines.innerHTML = data.redlinesHTML || '';
+      k1.textContent = fmtPct(data?.kpis?.cycleTimeCutPct);
+      k2.textContent = fmtPct(data?.kpis?.firstDraftCoveragePct);
+      k3.textContent = fmtPct(data?.kpis?.riskReductionPct);
+
+      results.classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>

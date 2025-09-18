@@ -35,32 +35,67 @@
     </section>
 
     <section id="results" class="hidden">
-      <div class="card">
-        <h3>Deviation Report</h3>
-        <div class="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Clause</th>
-                <th>Customer Ask</th>
-                <th>Our Standard</th>
-                <th>Deviation</th>
-                <th>Risk</th>
-                <th>Suggested Fix</th>
-              </tr>
-            </thead>
-            <tbody id="rows"></tbody>
-          </table>
+      <div class="tabs">
+        <div class="tab-nav">
+          <button class="tab-btn active" data-tab="deviations">Deviations</button>
+          <button class="tab-btn" data-tab="ai-draft">AI Draft</button>
+          <button class="tab-btn" data-tab="approvals">Approvals</button>
+          <button class="tab-btn" data-tab="summary">Summary</button>
         </div>
-      </div>
-
-      <div class="card">
-        <h3>AI Draft (Redlines)</h3>
-        <div id="redlines" class="prose"></div>
-        <div class="kpis">
-          <div><div class="kpi-label">Cycle Time Cut</div><div id="kpi1" class="kpi-value">—</div></div>
-          <div><div class="kpi-label">First-Draft Coverage</div><div id="kpi2" class="kpi-value">—</div></div>
-          <div><div class="kpi-label">Risk High → Medium</div><div id="kpi3" class="kpi-value">—</div></div>
+        
+        <div class="tab-content">
+          <div id="deviations" class="tab-pane active">
+            <div class="card">
+              <h3>Deviation Report</h3>
+              <div class="tablewrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Clause</th>
+                      <th>Customer Ask</th>
+                      <th>Our Standard</th>
+                      <th>Deviation</th>
+                      <th>Risk</th>
+                      <th>Suggested Fix</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          
+          <div id="ai-draft" class="tab-pane">
+            <div class="card">
+              <h3>AI Draft (Redlines)</h3>
+              <div id="redlines" class="prose"></div>
+              <div class="kpis">
+                <div><div class="kpi-label">Cycle Time Cut</div><div id="kpi1" class="kpi-value">—</div></div>
+                <div><div class="kpi-label">First-Draft Coverage</div><div id="kpi2" class="kpi-value">—</div></div>
+                <div><div class="kpi-label">Risk High → Medium</div><div id="kpi3" class="kpi-value">—</div></div>
+              </div>
+            </div>
+          </div>
+          
+          <div id="approvals" class="tab-pane">
+            <div class="card">
+              <h3>Approvals</h3>
+              <p class="muted">Approval workflow and status tracking will be displayed here.</p>
+              <div id="approval-content">
+                <!-- Approval content will be populated here -->
+              </div>
+            </div>
+          </div>
+          
+          <div id="summary" class="tab-pane">
+            <div class="card">
+              <h3>Summary</h3>
+              <p class="muted">Overall analysis summary and key metrics will be displayed here.</p>
+              <div id="summary-content">
+                <!-- Summary content will be populated here -->
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -80,6 +115,24 @@
     const k2 = document.getElementById('kpi2');
     const k3 = document.getElementById('kpi3');
     const newBtn = document.getElementById('new');
+
+    // Tab functionality
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.getAttribute('data-tab');
+        
+        // Remove active class from all buttons and panes
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => p.classList.remove('active'));
+        
+        // Add active class to clicked button and corresponding pane
+        btn.classList.add('active');
+        document.getElementById(targetTab).classList.add('active');
+      });
+    });
 
     function fmtPct(n) {
       if (typeof n !== 'number') return '—';

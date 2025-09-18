@@ -26,6 +26,7 @@ COPY . .
 
 EXPOSE 7860
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}"]
+# Use shell form so ${PORT} expands at runtime (required on Render and similar PaaS)
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}"]
 
 

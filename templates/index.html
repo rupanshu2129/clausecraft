@@ -28,7 +28,16 @@
       </div>
 
       <div class="card">
-        <h3>3) Analyze</h3>
+        <h3>3) Build Knowledge Base</h3>
+        <p class="muted">Upload historical contracts/SOWs to build AI knowledge</p>
+        <input id="knowledgeFiles" type="file" accept=".pdf,.docx,.txt" multiple />
+        <button id="addKnowledge" class="btn" disabled>Add to Knowledge Base</button>
+        <div id="knowledgeStatus" class="status"></div>
+        <div id="knowledgeStats" class="muted small"></div>
+      </div>
+
+      <div class="card">
+        <h3>4) Analyze</h3>
         <button id="analyze" class="btn primary" disabled>Analyze</button>
         <div id="status" class="status"></div>
       </div>
@@ -115,6 +124,10 @@
     const k2 = document.getElementById('kpi2');
     const k3 = document.getElementById('kpi3');
     const newBtn = document.getElementById('new');
+    const knowledgeFiles = document.getElementById('knowledgeFiles');
+    const addKnowledgeBtn = document.getElementById('addKnowledge');
+    const knowledgeStatus = document.getElementById('knowledgeStatus');
+    const knowledgeStats = document.getElementById('knowledgeStats');
 
     // Tab functionality
     const tabBtns = document.querySelectorAll('.tab-btn');
@@ -154,11 +167,62 @@
       });
     });
 
+    // Knowledge base functionality
+    knowledgeFiles.addEventListener('change', () => {
+      addKnowledgeBtn.disabled = !knowledgeFiles.files.length;
+    });
+
+    addKnowledgeBtn.addEventListener('click', async () => {
+      if (!knowledgeFiles.files.length) return;
+      
+      addKnowledgeBtn.disabled = true;
+      knowledgeStatus.textContent = 'Adding to knowledge base...';
+
+      const fd = new FormData();
+      Array.from(knowledgeFiles.files).forEach(f => fd.append('files', f));
+
+      try {
+        const res = await fetch('/api/knowledge/add', { method: 'POST', body: fd });
+        const data = await res.json();
+
+        if (res.ok) {
+          knowledgeStatus.textContent = `Added ${data.success.length} files, ${data.total_chunks} chunks`;
+          if (data.errors.length > 0) {
+            knowledgeStatus.textContent += ` (${data.errors.length} errors)`;
+          }
+          loadKnowledgeStats();
+        } else {
+          knowledgeStatus.textContent = data.error || 'Failed to add to knowledge base';
+        }
+      } catch (e) {
+        knowledgeStatus.textContent = 'Error adding to knowledge base';
+      }
+
+      addKnowledgeBtn.disabled = false;
+    });
+
+    async function loadKnowledgeStats() {
+      try {
+        const res = await fetch('/api/knowledge/stats');
+        const data = await res.json();
+        if (res.ok) {
+          knowledgeStats.textContent = `Knowledge base: ${data.total_documents} documents`;
+        }
+      } catch (e) {
+        // Ignore errors for stats
+      }
+    }
+
+    // Load stats on page load
+    loadKnowledgeStats();
+
     newBtn.addEventListener('click', () => {
       rfqInput.value = '';
       sowsInput.value = '';
+      knowledgeFiles.value = '';
       rfqName.textContent = '';
       sowList.innerHTML = '';
+      knowledgeStatus.textContent = '';
       rows.innerHTML = '';
       redlines.innerHTML = '';
       k1.textContent = '—';
@@ -166,6 +230,7 @@
       k3.textContent = '—';
       results.classList.add('hidden');
       analyzeBtn.disabled = true;
+      addKnowledgeBtn.disabled = true;
       statusEl.textContent = '';
     });
 

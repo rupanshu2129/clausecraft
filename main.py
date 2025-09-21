@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from lib.extract_text import extract_text
+from lib.rag_service import rag_service
 
 # Basic logging
 logging.basicConfig(level=logging.INFO)
@@ -49,9 +50,16 @@ Return ONLY valid JSON with this exact shape:
 }
 """
 
-def build_prompt(rfq_text: str, sow_texts: List[str]) -> str:
+def build_prompt(rfq_text: str, sow_texts: List[str], rag_context: str = "") -> str:
+    knowledge_section = ""
+    if rag_context.strip():
+        knowledge_section = f"""
+KNOWLEDGE BASE CONTEXT (from previous contracts/SOWs):
+\"\"\"{rag_context}\"\"\"
+"""
+    
     return f"""
-You are a contracts analyst. Compare the customer's RFQ to our SOW/MSA standards.
+You are a contracts analyst. Compare the customer's RFQ to our SOW/MSA standards and historical knowledge.
 
 Tasks:
 1) Identify key clauses and show the customer's ask vs. our standard.
@@ -62,7 +70,9 @@ Tasks:
    - Use <span class="line-through">deleted</span> for removals
    - Use <span class="underline">added</span> for additions
 6) Provide rough KPIs after redlining (best-effort estimates).
+7) Consider historical patterns from our knowledge base when making recommendations.
 
+{knowledge_section}
 RFQ (customer ask):
 \"\"\"{rfq_text}\"\"\"
 
@@ -76,6 +86,51 @@ Only output JSON. No extra text.
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+@app.post("/api/knowledge/add")
+async def add_to_knowledge_base(files: List[UploadFile] = []):
+    """Add documents to the knowledge base"""
+    if not files:
+        return JSONResponse({"error": "No files provided"}, status_code=400)
+    
+    try:
+        file_data = []
+        file_names = []
+        
+        for file in files:
+            data = await file.read()
+            file_data.append(data)
+            file_names.append(file.filename)
+        
+        results = rag_service.add_documents(file_data, file_names)
+        return JSONResponse(results, status_code=200)
+        
+    except Exception as e:
+        logger.error(f"Error adding to knowledge base: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/knowledge/stats")
+async def get_knowledge_stats():
+    """Get knowledge base statistics"""
+    try:
+        stats = rag_service.get_collection_stats()
+        return JSONResponse(stats, status_code=200)
+    except Exception as e:
+        logger.error(f"Error getting knowledge stats: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/knowledge/clear")
+async def clear_knowledge_base():
+    """Clear the knowledge base"""
+    try:
+        success = rag_service.clear_knowledge_base()
+        if success:
+            return JSONResponse({"message": "Knowledge base cleared"}, status_code=200)
+        else:
+            return JSONResponse({"error": "Failed to clear knowledge base"}, status_code=500)
+    except Exception as e:
+        logger.error(f"Error clearing knowledge base: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/analyze")
 async def analyze(rfq: UploadFile, sows: List[UploadFile] = []):
@@ -100,8 +155,12 @@ async def analyze(rfq: UploadFile, sows: List[UploadFile] = []):
         except Exception as e:
             return JSONResponse({"error": f"Failed to read SOW {getattr(f, 'filename', '')}", "detail": str(e)}, status_code=400)
 
-    prompt = build_prompt(rfq_text, sow_texts)
-    logger.info("Analyze invoked. rfq_len=%s sow_count=%s", len(rfq_text or ""), len(sow_texts))
+    # Get RAG context from knowledge base
+    rag_context = rag_service.get_knowledge_context(rfq_text, max_chunks=10)
+    logger.info("Analyze invoked. rfq_len=%s sow_count=%s rag_chunks=%s", 
+                len(rfq_text or ""), len(sow_texts), len(rag_context.split('\n')) if rag_context else 0)
+    
+    prompt = build_prompt(rfq_text, sow_texts, rag_context)
 
     client = OpenAI(
         api_key=OPENAI_API_KEY,

@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from typing import List
 
 from dotenv import load_dotenv
@@ -10,10 +11,17 @@ from fastapi.templating import Jinja2Templates
 
 from lib.extract_text import extract_text
 
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Basic logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("clausecraft")
 
-from google import genai
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_ORG_ID = os.getenv("OPENAI_ORG_ID")
+OPENAI_PROJECT = os.getenv("OPENAI_PROJECT")
+
+from openai import OpenAI
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -73,29 +81,65 @@ async def index(request: Request):
 async def analyze(rfq: UploadFile, sows: List[UploadFile] = []):
     if not rfq:
         return JSONResponse({"error": "RFQ required"}, status_code=400)
-    if not GEMINI_API_KEY:
-        return JSONResponse({"error": "Missing GEMINI_API_KEY"}, status_code=500)
+    if not OPENAI_API_KEY:
+        return JSONResponse({"error": "Missing OPENAI_API_KEY"}, status_code=500)
 
-    rfq_bytes = await rfq.read()
-    rfq_text, _ = extract_text(rfq_bytes, rfq.filename)
+    try:
+        rfq_bytes = await rfq.read()
+        rfq_text, _ = extract_text(rfq_bytes, rfq.filename)
+    except Exception as e:
+        return JSONResponse({"error": "Failed to read RFQ", "detail": str(e)}, status_code=400)
 
     sow_texts: List[str] = []
     for f in sows:
-        data = await f.read()
-        text, _ = extract_text(data, f.filename)
-        if text.strip():
-            sow_texts.append(text)
+        try:
+            data = await f.read()
+            text, _ = extract_text(data, f.filename)
+            if text.strip():
+                sow_texts.append(text)
+        except Exception as e:
+            return JSONResponse({"error": f"Failed to read SOW {getattr(f, 'filename', '')}", "detail": str(e)}, status_code=400)
 
     prompt = build_prompt(rfq_text, sow_texts)
+    logger.info("Analyze invoked. rfq_len=%s sow_count=%s", len(rfq_text or ""), len(sow_texts))
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    resp = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config={"response_mime_type": "application/json"},
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url=OPENAI_BASE_URL,
+        organization=OPENAI_ORG_ID,
+        project=OPENAI_PROJECT,
     )
-
-    text = getattr(resp, "text", None)
+    try:
+        # Chat Completions API (messages-based)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a contracts analyst that outputs strictly valid JSON when asked."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        text = resp.choices[0].message.content
+    except Exception as e:
+        status_code = getattr(e, "status_code", None)
+        body = None
+        resp_obj = getattr(e, "response", None)
+        if resp_obj is not None:
+            try:
+                body = resp_obj.json()
+            except Exception:
+                try:
+                    body = resp_obj.text
+                except Exception:
+                    body = None
+            if status_code is None:
+                status_code = getattr(resp_obj, "status_code", None)
+        logger.error("OpenAI upstream error status=%s body=%s err=%s", status_code, body, str(e))
+        return JSONResponse(
+            {"error": "Model request failed", "detail": body or str(e)},
+            status_code=int(status_code) if isinstance(status_code, int) and 100 <= status_code <= 599 else 502,
+        )
     if not text:
         return JSONResponse({"error": "No model output"}, status_code=502)
 
@@ -105,7 +149,10 @@ async def analyze(rfq: UploadFile, sows: List[UploadFile] = []):
         start = text.find("{")
         end = text.rfind("}")
         if start == -1 or end == -1:
-            return JSONResponse({"error": "Malformed model output"}, status_code=502)
-        parsed = json.loads(text[start : end + 1])
+            return JSONResponse({"error": "Malformed model output", "detail": text[:500]}, status_code=502)
+        try:
+            parsed = json.loads(text[start : end + 1])
+        except Exception:
+            return JSONResponse({"error": "Malformed model output", "detail": text[:500]}, status_code=502)
 
     return JSONResponse(parsed, status_code=200)

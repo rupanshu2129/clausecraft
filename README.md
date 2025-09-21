@@ -1,6 +1,7 @@
 # ClauseCraft.ai
 
-ClauseCraft.ai analyzes RFQs against your SOW/MSA standards, highlights deviations and risks, and drafts suggested redlines. Built with FastAPI + Jinja templates and the Gemini API.
+ClauseCraft.ai analyzes RFQs against your SOW/MSA standards, highlights deviations and risks, and drafts suggested redlines. 
+Built with FastAPI + Jinja templates and the Gemini API.
 
 ## Features
 - Upload an RFQ (PDF/DOCX/TXT) and optional SOWs/MSAs
@@ -13,13 +14,13 @@ ClauseCraft.ai analyzes RFQs against your SOW/MSA standards, highlights deviatio
 ## Tech Stack
 - Backend: FastAPI (Python)
 - Frontend: Jinja2 templates, vanilla JS, CSS
-- AI: Google Gemini via `google-genai`
+- AI: OpenAI (Chat Completions JSON mode)
 - File parsing: pdfminer.six, python-docx
 - Runtime: Uvicorn
 
 ## Prerequisites
 - Python 3.10+
-- A Google Gemini API key (`GEMINI_API_KEY`)
+- An OpenAI API key (`OPENAI_API_KEY`)
 
 ## Quick Start (Local)
 ```bash
@@ -33,7 +34,7 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # 3) Env vars
-echo "GEMINI_API_KEY=your_key_here" > .env
+echo "OPENAI_API_KEY=your_key_here" > .env
 
 # 4) Run
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -82,7 +83,7 @@ docker run -e GEMINI_API_KEY=your_key -e PORT=8000 -p 8000:8000 clausecraft
 - Connect the GitHub repo in Render → New → Web Service
 - Build: `pip install --upgrade pip && pip install -r requirements.txt`
 - Start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-- Env var: `GEMINI_API_KEY`
+- Env var: `OPENAI_API_KEY`
 - Alternatively, use `render.yaml` in the repo for autodiscover
 
 ### Railway / Other PaaS
@@ -100,7 +101,10 @@ Supabase is great for DB/auth/storage. This app doesn't require a DB, but you ca
 - Use `supabase-py` to integrate with FastAPI
 
 ## Environment Variables
-- `GEMINI_API_KEY` (required): Google Gemini API key
+- `OPENAI_API_KEY` (required): OpenAI API key
+- `OPENAI_BASE_URL` (optional, default `https://api.openai.com/v1`)
+- `OPENAI_ORG_ID` (optional): OpenAI organization ID
+- `OPENAI_PROJECT` (optional): OpenAI project ID (required if your key starts with `sk-proj-`)
 
 ## Notes
 - PDFs and DOCX are parsed best-effort; quality of input affects output

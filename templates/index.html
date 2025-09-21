@@ -179,7 +179,19 @@
       Array.from(sowsInput.files || []).forEach(f => fd.append('sows', f));
 
       const res = await fetch('/api/analyze', { method: 'POST', body: fd });
-      const data = await res.json();
+      let data;
+      try {
+        const text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Server returned non-JSON: ${text?.slice(0,200)}`);
+        }
+      } catch (e) {
+        analyzeBtn.disabled = false;
+        statusEl.textContent = e?.message || 'Analyze failed';
+        return;
+      }
 
       analyzeBtn.disabled = false;
       statusEl.textContent = '';
